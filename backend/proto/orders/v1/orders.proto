@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package orders.v1;
+
+option go_package = "github.com/yashdagar/zomato-prep/backend/gen/orders/v1;ordersv1";
+
+service OrderService {
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc PlaceOrder(PlaceOrderRequest) returns (PlaceOrderResponse);
+  rpc Transition(TransitionRequest) returns (TransitionResponse);
+  rpc WatchOrder(WatchOrderRequest) returns (stream WatchOrderResponse);
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_PLACED = 1;
+  STATUS_ACCEPTED = 2;
+  STATUS_PREPARING = 3;
+  STATUS_READY = 4;
+  STATUS_PICKED_UP = 5;
+  STATUS_DELIVERED = 6;
+  STATUS_CANCELLED = 7;
+  STATUS_REJECTED = 8;
+}
+
+message Line {
+  int64 item_id = 1;
+  string size = 2;
+  int32 qty = 3;
+  int64 unit_paise = 4;
+}
+
+message Order {
+  int64 id = 1;
+  int64 user_id = 2;
+  int64 restaurant_id = 3;
+  Status status = 4;
+  int64 version = 5;
+  int64 total_paise = 6;
+  repeated Line lines = 7;
+}
+
+message GetOrderRequest {
+  int64 id = 1;
+}
+
+message GetOrderResponse {
+  Order order = 1;
+}
+
+message PlaceOrderRequest {
+  int64 restaurant_id = 1;
+  repeated Line lines = 2;
+}
+
+message PlaceOrderResponse {
+  Order order = 1;
+}
+
+message TransitionRequest {
+  int64 order_id = 1;
+  string event_id = 2;
+  string event = 3;
+}
+
+message TransitionResponse {
+  Order order = 1;
+}
+
+message WatchOrderRequest {
+  int64 order_id = 1;
+}
+
+message WatchOrderResponse {
+  int64 order_id = 1;
+  string event_id = 2;
+  Status from = 3;
+  Status to = 4;
+}

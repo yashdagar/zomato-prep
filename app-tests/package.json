@@ -1,0 +1,14 @@
+{
+  "name": "zomato-prep-app-tests",
+  "private": true,
+  "description": "Jest tests for app/lib. Run from this folder after creating the Expo app in ../app (week 4 B1).",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.4",
+    "typescript": "^5.8.3"
+  }
+}

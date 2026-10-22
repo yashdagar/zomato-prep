@@ -1,0 +1,4 @@
+node_modules/
+.env
+app-tests/coverage/
+backend/gen/
