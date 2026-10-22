@@ -71,7 +71,7 @@ describe('W4 B2 ApiClient', () => {
   test('429 becomes an ApiError carrying Retry-After', async () => {
     fakeFetch(() => json(429, { error: 'rate_limited' }, { 'Retry-After': '3' }));
     const api = new ApiClient('http://api', memStore(null));
-    const err = await api.request('/x').catch(e => e);
+    const err = (await api.request('/x').catch(e => e)) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(429);
     expect(err.retryAfterSec).toBe(3);
@@ -80,7 +80,7 @@ describe('W4 B2 ApiClient', () => {
   test('other errors expose status and body', async () => {
     fakeFetch(() => json(400, { error: 'bad cursor' }));
     const api = new ApiClient('http://api', memStore(null));
-    const err = await api.request('/x').catch(e => e);
+    const err = (await api.request('/x').catch(e => e)) as ApiError;
     expect(err.status).toBe(400);
     expect(err.body).toEqual({ error: 'bad cursor' });
   });
