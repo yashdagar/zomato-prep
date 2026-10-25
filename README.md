@@ -14,11 +14,29 @@ backend/            Go module github.com/yashdagar/zomato-prep/backend (you writ
   e2e/              black-box tests against a running API, TEST_API_URL=http://localhost:8080
   proto/orders/v1   the gRPC contract for week 7 (buf lint + buf generate into gen/)
   scripts/          checks that need Docker, kill -9 or grpcurl
+  tools/zt          the make test / make run front end (logo, grouped results)
 app-tests/          Jest tests for app/lib (ApiClient, cart store, reconnect backoff)
 app/                the Expo app, created in week 4 (npx create-expo-app app --template blank-typescript)
 ```
 
 ## Running
+
+```sh
+cd backend
+make test                                  # every test, grouped by week and step, with the next step to do
+make test W=W1                             # one week
+make test W=W1B2 V=1                       # one step, full failure output
+make run                                   # logo banner, then go run ./cmd/api
+make worker                                # logo banner, then go run ./cmd/worker
+```
+
+`make test` runs the unit tests with `-race`, the e2e tests and the app tests
+together. It marks a step not written yet while its package is still missing,
+shows compile errors once per package, and lists which env vars would un-skip
+the rest. It exits non-zero on a failing or non-compiling test, so it works
+in CI too. Set `NO_COLOR=1` for plain output.
+
+The raw commands still work:
 
 ```sh
 cd backend
