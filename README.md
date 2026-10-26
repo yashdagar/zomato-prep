@@ -42,7 +42,7 @@ The raw commands still work:
 cd backend
 go test -race ./internal/ratelimit/        # one step
 make unit                                  # every unit test (Redis ones need TEST_REDIS_ADDR)
-TEST_REDIS_ADDR=127.0.0.1:6379 make unit
+TEST_REDIS_ADDR=127.0.0.1:6379 make unit       # also adds -tags redis for W1B7
 TEST_API_URL=http://localhost:8080 make e2e            # against your running API and worker
 TEST_API_URL=http://localhost:8080 go test ./e2e -run W3   # one week
 TEST_GRPC_ADDR=localhost:9090 make e2e-grpc            # week 7, after buf generate

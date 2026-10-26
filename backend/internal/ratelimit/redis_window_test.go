@@ -1,3 +1,5 @@
+//go:build redis
+
 package ratelimit_test
 
 import (

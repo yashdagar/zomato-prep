@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,12 +37,29 @@ type test struct {
 }
 
 var (
+	buildTag = regexp.MustCompile(`^//go:build (\w+)`)
 	goTest   = regexp.MustCompile(`(?m)^func (TestW(\d+)([A-Z]\d+)_(\w+))\(t \*testing\.T\)`)
 	jestDesc = regexp.MustCompile(`describe\('W(\d+) ([A-Z]\d+) ([^']+)'`)
 	jestTest = regexp.MustCompile(`(?m)^\s+test\('([^']+)'`)
 )
 
-func scanGo(dir, kind string, grpc bool) []*test {
+var tagEnv = map[string]struct{ env, note string }{
+	"grpc":  {"TEST_GRPC_ADDR", "set TEST_GRPC_ADDR=localhost:9090 to run (after buf generate)"},
+	"redis": {"TEST_REDIS_ADDR", "set TEST_REDIS_ADDR=127.0.0.1:6379 to run (after make up)"},
+}
+
+func enabledTags() []string {
+	var tags []string
+	for tag, e := range tagEnv {
+		if os.Getenv(e.env) != "" {
+			tags = append(tags, tag)
+		}
+	}
+	sort.Strings(tags)
+	return tags
+}
+
+func scanGo(dir, kind string, tags []string) []*test {
 	var out []*test
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, "_test.go") {
@@ -51,14 +69,17 @@ func scanGo(dir, kind string, grpc bool) []*test {
 		if err != nil {
 			return nil
 		}
-		tagged := strings.HasPrefix(string(src), "//go:build grpc")
+		tag := ""
+		if m := buildTag.FindStringSubmatch(string(src)); m != nil {
+			tag = m[1]
+		}
 		pkg := module + "/" + filepath.ToSlash(filepath.Dir(path))
 		for _, m := range goTest.FindAllStringSubmatch(string(src), -1) {
 			week, _ := strconv.Atoi(m[2])
 			t := &test{kind: kind, pkg: pkg, name: m[1], week: week, step: m[3], title: words(m[4])}
-			if tagged && !grpc {
+			if e, ok := tagEnv[tag]; ok && !slices.Contains(tags, tag) {
 				t.status = skipped
-				t.note = "set TEST_GRPC_ADDR=localhost:9090 to run (after buf generate)"
+				t.note = e.note
 			}
 			out = append(out, t)
 		}

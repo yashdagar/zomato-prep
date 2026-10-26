@@ -53,8 +53,8 @@ func runTests(s style, filter string, verbose bool) int {
 		label = m[2]
 	}
 
-	grpc := os.Getenv("TEST_GRPC_ADDR") != ""
-	all := append(append(scanGo("internal", "unit", grpc), scanGo("e2e", "e2e", grpc)...), scanJest("../app-tests")...)
+	tags := enabledTags()
+	all := append(append(scanGo("internal", "unit", tags), scanGo("e2e", "e2e", tags)...), scanJest("../app-tests")...)
 	var tests []*test
 	for _, t := range all {
 		if (week == 0 || t.week == week) && (label == "" || t.step == label) {
@@ -93,6 +93,9 @@ func runTests(s style, filter string, verbose bool) int {
 		if run != "" {
 			base = append(base, "-run", run)
 		}
+		if len(tags) > 0 {
+			base = append(base, "-tags", strings.Join(tags, ","))
+		}
 		return base
 	}
 
@@ -115,11 +118,7 @@ func runTests(s style, filter string, verbose bool) int {
 	}
 	if has["e2e"] {
 		spin("end-to-end tests")
-		a := withRun("-count=1")
-		if grpc {
-			a = append(a, "-tags", "grpc")
-		}
-		m, err := runGo(append(a, "./e2e/..."), byKey)
+		m, err := runGo(append(withRun("-count=1"), "./e2e/..."), byKey)
 		if err == nil {
 			merge(m)
 			ran["e2e"] = true
