@@ -1,0 +1,34 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - gosec
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+  settings:
+    govet:
+      enable:
+        - shadow
+    gosec:
+      excludes:
+        - G404
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/yashdagar/zomato-prep
+
