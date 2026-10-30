@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 
@@ -35,5 +36,7 @@ func RateLimit(l ratelimit.Limiter) func(http.Handler) http.Handler {
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("Error writing JSON: %v", err)
+	}
 }
