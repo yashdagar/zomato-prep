@@ -229,7 +229,7 @@ func runJest(dir, filter string, tests []*test) {
 		file := filepath.Base(f.Name)
 		if len(f.AssertionResults) == 0 && f.Status == "failed" {
 			for _, t := range byFile[file] {
-				if strings.Contains(f.Message, "Cannot find module '@app/") {
+				if strings.Contains(f.Message, "Cannot find module '@app/") || strings.Contains(f.Message, "Could not locate module @app/") {
 					t.note = "not written yet"
 				} else {
 					t.status = broken
