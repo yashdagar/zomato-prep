@@ -3,7 +3,7 @@
 # when TEST_REDIS_ADDR is set (W1B7 also needs the redis build tag). E2E tests run against a live API.
 
 lint:
-	golangci-lint run ./...
+	golangci-lint run --build-tags redis $$(go list -e -f '{{if .GoFiles}}{{.Dir}}{{end}}' ./cmd/... ./internal/...)
 
 test:
 	@go run ./tools/zt test $(W) $(if $(V),-v)
