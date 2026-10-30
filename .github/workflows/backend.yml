@@ -1,0 +1,60 @@
+name: backend
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_REDIS_ADDR: 127.0.0.1:6379
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+
+      - name: Lint
+        run: make lint
+
+      - name: Unit tests, all weeks, with -race
+        run: make test
+
+      - name: Start API
+        run: |
+          go build -o "$RUNNER_TEMP/api" ./cmd/api
+          "$RUNNER_TEMP/api" > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 30); do
+            curl -sf http://localhost:8080/healthz > /dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: E2E week 1
+        run: make test W=1
+        env:
+          TEST_API_URL: http://localhost:8080
+
+      - name: API log
+        if: always()
+        run: cat "$RUNNER_TEMP/api.log" || true
