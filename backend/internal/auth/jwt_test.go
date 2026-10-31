@@ -1,11 +1,10 @@
 package auth
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestW3B1_IssueAndParse(t *testing.T) {
@@ -28,28 +27,21 @@ func TestW3B1_ExpiredTokenIsRejected(t *testing.T) {
 	}
 }
 
-func TestW3B2_Middleware(t *testing.T) {
+func TestW3B1_TokenSignedWithAnotherAlgorithmIsRejected(t *testing.T) {
 	s := NewSigner("test-secret", time.Minute)
-	tok, _ := s.Issue(7, "rider", time.Now())
-	h := s.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, ok := From(r.Context())
-		if !ok || p.UserID != 7 {
-			t.Errorf("principal missing in context: %+v %v", p, ok)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/me", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("with token: %d", rec.Code)
+	claims := jwt.MapClaims{"sub": "1", "role": "customer", "exp": time.Now().Add(time.Minute).Unix()}
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS384, claims).SignedString([]byte("test-secret"))
+	if err != nil {
+		t.Fatal(err)
 	}
+	if _, err := s.Parse(tok); err == nil {
+		t.Fatal("an HS384 token must fail Parse: the signing method has to be pinned to HS256")
+	}
+}
 
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/me", nil))
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("without token: %d", rec.Code)
+func TestW3B1_TokenSignedWithAnotherSecretIsRejected(t *testing.T) {
+	tok, _ := NewSigner("attacker-secret", time.Minute).Issue(1, "restaurant", time.Now())
+	if _, err := NewSigner("test-secret", time.Minute).Parse(tok); err == nil {
+		t.Fatal("a token signed with a different secret must fail Parse")
 	}
 }
