@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -38,18 +39,43 @@ func (r resp) JSON(t *testing.T, v any) {
 }
 
 type client struct {
-	t     *testing.T
-	base  string
-	token string
-	http  *http.Client
+	t        *testing.T
+	base     string
+	token    string
+	limitKey string
+	http     *http.Client
 }
 
+var clientSeq atomic.Int64
+
+// newClient gives every client its own rate-limit bucket through X-User-ID,
+// so tests from one machine do not share the per-IP limit from week 1.
 func newClient(t *testing.T) *client {
 	t.Helper()
-	return &client{t: t, base: baseURL(t), http: &http.Client{Timeout: 10 * time.Second}}
+	key := fmt.Sprintf("e2e-%d-%d", time.Now().UnixNano(), clientSeq.Add(1))
+	return &client{t: t, base: baseURL(t), limitKey: key, http: &http.Client{Timeout: 10 * time.Second}}
 }
 
 func (c *client) do(method, path string, body any, headers ...string) resp {
+	c.t.Helper()
+	ownKey := true
+	for i := 0; i+1 < len(headers); i += 2 {
+		if http.CanonicalHeaderKey(headers[i]) == "X-User-Id" {
+			ownKey = false
+		}
+	}
+	for attempt := 0; ; attempt++ {
+		r := c.once(method, path, body, ownKey, headers...)
+		if r.Status != http.StatusTooManyRequests || !ownKey || attempt == 5 {
+			return r
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// once sends one request. A 429 is retried by do only when the test did not
+// pick its own X-User-ID, because the week 1 tests assert on the 429 itself.
+func (c *client) once(method, path string, body any, ownKey bool, headers ...string) resp {
 	c.t.Helper()
 	var rd io.Reader
 	if body != nil {
@@ -70,6 +96,9 @@ func (c *client) do(method, path string, body any, headers ...string) resp {
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if ownKey {
+		req.Header.Set("X-User-ID", c.limitKey)
 	}
 	for i := 0; i+1 < len(headers); i += 2 {
 		req.Header.Set(headers[i], headers[i+1])

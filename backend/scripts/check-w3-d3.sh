@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # W3 D3: kill -9 the worker with events queued; after restart, exactly one
 # notification per event. Needs: API up, worker started as `make worker`
-# in another terminal, TEST_API_URL, MYSQL_DSN like
-# "root:pass@tcp(127.0.0.1:3306)/zomato", and the e2e tests compiled.
+# in another terminal, TEST_API_URL, and MYSQL_DATABASE if it is not zomato.
 set -euo pipefail
 API=${TEST_API_URL:-http://localhost:8080}
-: "${MYSQL_DSN:?set MYSQL_DSN}"
-q() { docker compose exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD:-root}" zomato -N -e "$1"; }
+DB=${MYSQL_DATABASE:-zomato}
+q() { docker compose exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD:-dev}" "$DB" -N -e "$1" 2>/dev/null; }
 before_events=$(q "SELECT COUNT(*) FROM order_events")
-echo "placing 200 orders..."
+echo "placing 80 orders..."
 TEST_API_URL=$API go test ./e2e -run 'TestW3B4_IdempotencyKeyIsRequiredAndDedupes' -count=40 >/dev/null
-pid=$(pgrep -f 'cmd/worker' | head -1 || true)
+# make worker runs `go run ./cmd/worker`, which starts a child binary named
+# worker; killing only the go parent would leave the real worker running.
+pid=$(pgrep -f '/exe/worker$' | head -1 || true)
+[ -z "$pid" ] && pid=$(pgrep -f 'cmd/worker' | head -1 || true)
 if [ -z "$pid" ]; then echo "FAIL: worker is not running (make worker)"; exit 1; fi
 kill -9 "$pid"; echo "killed worker $pid; restart it now with: make worker"; sleep 20
 after_events=$(q "SELECT COUNT(*) FROM order_events")
