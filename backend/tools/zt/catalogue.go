@@ -97,7 +97,7 @@ func scanGo(dir, kind string, tags []string) []*test {
 	return out
 }
 
-func scanJest(dir string) []*test {
+func scanJest(dir string, tags []string) []*test {
 	var out []*test
 	files, _ := filepath.Glob(filepath.Join(dir, "lib", "*.test.ts"))
 	sort.Strings(files)
@@ -112,14 +112,19 @@ func scanJest(dir string) []*test {
 		}
 		week, _ := strconv.Atoi(d[1])
 		for _, m := range jestTest.FindAllStringSubmatch(string(src), -1) {
-			out = append(out, &test{
+			t := &test{
 				kind:  "app",
 				pkg:   filepath.Base(f),
 				name:  "W" + d[1] + " " + d[2] + " " + d[3] + " " + m[1],
 				week:  week,
 				step:  d[2],
 				title: m[1],
-			})
+			}
+			if strings.HasPrefix(d[2], "O") && !slices.Contains(tags, strings.ToLower("w"+d[1]+d[2])) {
+				t.status = skipped
+				t.note = "optional: run make test W=" + d[1] + d[2]
+			}
+			out = append(out, t)
 		}
 	}
 	return out

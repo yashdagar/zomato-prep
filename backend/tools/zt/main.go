@@ -57,7 +57,7 @@ func runTests(s style, filter string, verbose bool) int {
 	if strings.HasPrefix(label, "O") {
 		tags = append(tags, strings.ToLower(fmt.Sprintf("w%d%s", week, label)))
 	}
-	all := append(append(scanGo("internal", "unit", tags), scanGo("e2e", "e2e", tags)...), scanJest("../app-tests")...)
+	all := append(append(scanGo("internal", "unit", tags), scanGo("e2e", "e2e", tags)...), scanJest("../app-tests", tags)...)
 	var tests []*test
 	for _, t := range all {
 		if (week == 0 || t.week == week) && (label == "" || t.step == label) {
