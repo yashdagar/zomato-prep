@@ -54,6 +54,9 @@ func runTests(s style, filter string, verbose bool) int {
 	}
 
 	tags := enabledTags()
+	if strings.HasPrefix(label, "O") {
+		tags = append(tags, strings.ToLower(fmt.Sprintf("w%d%s", week, label)))
+	}
 	all := append(append(scanGo("internal", "unit", tags), scanGo("e2e", "e2e", tags)...), scanJest("../app-tests")...)
 	var tests []*test
 	for _, t := range all {

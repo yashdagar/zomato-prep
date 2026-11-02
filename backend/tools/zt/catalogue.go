@@ -38,6 +38,7 @@ type test struct {
 
 var (
 	buildTag = regexp.MustCompile(`^//go:build (\w+)`)
+	extraTag = regexp.MustCompile(`(?m)^//go:build .*\b(w\d+o\d+)\b`)
 	goTest   = regexp.MustCompile(`(?m)^func (TestW(\d+)([A-Z]\d+)_(\w+))\(t \*testing\.T\)`)
 	jestDesc = regexp.MustCompile(`describe\('W(\d+) ([A-Z]\d+) ([^']+)'`)
 	jestTest = regexp.MustCompile(`(?m)^\s+test\('([^']+)'`)
@@ -73,6 +74,10 @@ func scanGo(dir, kind string, tags []string) []*test {
 		if m := buildTag.FindStringSubmatch(string(src)); m != nil {
 			tag = m[1]
 		}
+		extra := ""
+		if m := extraTag.FindStringSubmatch(string(src)); m != nil {
+			extra = m[1]
+		}
 		pkg := module + "/" + filepath.ToSlash(filepath.Dir(path))
 		for _, m := range goTest.FindAllStringSubmatch(string(src), -1) {
 			week, _ := strconv.Atoi(m[2])
@@ -80,6 +85,10 @@ func scanGo(dir, kind string, tags []string) []*test {
 			if e, ok := tagEnv[tag]; ok && !slices.Contains(tags, tag) {
 				t.status = skipped
 				t.note = e.note
+			}
+			if extra != "" && !slices.Contains(tags, extra) {
+				t.status = skipped
+				t.note = "optional: run make test W=" + strings.ToUpper(strings.TrimPrefix(extra, "w"))
 			}
 			out = append(out, t)
 		}
