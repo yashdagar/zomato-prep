@@ -197,6 +197,9 @@ func runJest(dir, filter string, tests []*test) {
 	byName := map[string]*test{}
 	byFile := map[string][]*test{}
 	for _, t := range tests {
+		if t.status == skipped {
+			continue
+		}
 		byName[t.name] = t
 		byFile[t.pkg] = append(byFile[t.pkg], t)
 	}
