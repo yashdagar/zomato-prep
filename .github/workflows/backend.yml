@@ -39,7 +39,7 @@ jobs:
         run: make lint
 
       - name: Start your API if you have written it
-        if: ${{ hashFiles('backend/cmd/api/*.go') != '' }}
+        if: "${{ hashFiles('backend/cmd/api/*.go') != '' }}"
         run: |
           go build -o "$RUNNER_TEMP/api" ./cmd/api
           "$RUNNER_TEMP/api" > "$RUNNER_TEMP/api.log" 2>&1 &
@@ -69,11 +69,11 @@ jobs:
           (cd "$RUNNER_TEMP/base/backend" && ZT_JSON="$RUNNER_TEMP/base.json" make test || true)
 
       - name: Fail only if a test that passed before no longer passes
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci: allow-regression') }}
+        if: "${{ !contains(github.event.pull_request.labels.*.name, 'ci: allow-regression') }}"
         run: scripts/ci-progress.sh "$RUNNER_TEMP/head.json" "$RUNNER_TEMP/base.json"
 
       - name: Show progress without failing
-        if: ${{ contains(github.event.pull_request.labels.*.name, 'ci: allow-regression') }}
+        if: "${{ contains(github.event.pull_request.labels.*.name, 'ci: allow-regression') }}"
         run: scripts/ci-progress.sh "$RUNNER_TEMP/head.json" || true
 
       - name: API log
