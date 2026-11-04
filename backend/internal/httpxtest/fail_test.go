@@ -1,4 +1,4 @@
-package httpx_test
+package httpxtest_test
 
 import (
 	"context"

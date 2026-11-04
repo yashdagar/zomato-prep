@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS option_prices;
+DROP TABLE IF EXISTS options;
+DROP TABLE IF EXISTS option_groups;
+DROP TABLE IF EXISTS item_sizes;
+DROP TABLE IF EXISTS items;
+DROP TABLE IF EXISTS restaurants;
+
