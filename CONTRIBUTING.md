@@ -18,7 +18,7 @@ Large additions of course material use `content`, never `test`. Example: `conten
 
 ## Branches
 
-Name branches `type/short-name`, for example `content/weeks-5-8` or `fix/quiz-parser`.
+Name branches `type/short-name`, for example `content/weeks-5-8` or `fix/quiz-parser`. Delete a branch once its pull request is merged. The repository deletes head branches automatically on merge, so only delete by hand a branch that was merged some other way. Never delete a branch that is open, closed without merging, or the base of an open pull request.
 
 ## Labels
 
