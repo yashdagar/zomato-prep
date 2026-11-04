@@ -3,7 +3,8 @@
 # when TEST_REDIS_ADDR is set (W1B7 also needs the redis build tag). E2E tests run against a live API.
 
 lint:
-	golangci-lint run --build-tags redis $$(go list -e -f '{{if .GoFiles}}{{.Dir}}{{end}}' ./cmd/... ./internal/...)
+	@dirs="$$(go list -e -f '{{if .GoFiles}}{{.Dir}}{{end}}' ./cmd/... ./internal/...)"; \
+	if [ -z "$$dirs" ]; then echo 'nothing to lint yet, no package has code'; else golangci-lint run --build-tags redis $$dirs; fi
 
 test:
 	@go run ./tools/zt test $(W) $(if $(V),-v)
