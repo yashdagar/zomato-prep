@@ -122,7 +122,7 @@ cd ../app-tests && npm install && npx jest             # the Expo app libraries
 - **A test says `undefined`.** The package or function it expects does not exist yet. Read the test, then write it.
 - **A step shows `skipped`.** It needs a service. Run `docker compose up -d` and set `TEST_REDIS_ADDR` or `TEST_API_URL` as listed at the end of `make test`.
 - **`make lint` fails on a clean clone.** It only lints packages that contain non-test Go files, so write the package first.
-- **Redis or MySQL tests are flaky on a busy laptop.** Close other heavy processes or raise the timeouts in the failing test run with `V=1` to see the output.
+- **Redis or MySQL tests are flaky on a busy laptop.** Close other heavy processes and rerun the step with `V=1` to see the full output.
 - **Port already in use.** Another MySQL, Redis or Kafka is running. Stop it or change the port in `docker-compose.yml`.
 
 ## Contributing
