@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -139,6 +140,7 @@ func runTests(s style, filter string, verbose bool) int {
 
 	errs := settle(tests, pkgs, ran)
 	bad := render(os.Stdout, s, tests, errs, verbose)
+	writeJSON(os.Getenv("ZT_JSON"), tests)
 	fmt.Println("  " + s.dim(fmt.Sprintf("%.1fs", time.Since(start).Seconds())))
 	fmt.Println()
 	if bad {
@@ -185,4 +187,29 @@ func branch() string {
 		return "no git"
 	}
 	return strings.TrimSpace(string(out))
+}
+
+var statusNames = map[status]string{todo: "todo", skipped: "skipped", passed: "passed", failed: "failed", broken: "broken"}
+
+func writeJSON(path string, tests []*test) {
+	if path == "" {
+		return
+	}
+	type row struct {
+		ID     string `json:"id"`
+		Week   int    `json:"week"`
+		Step   string `json:"step"`
+		Status string `json:"status"`
+	}
+	rows := make([]row, 0, len(tests))
+	for _, t := range tests {
+		rows = append(rows, row{ID: t.pkg + "|" + t.name, Week: t.week, Step: t.step, Status: statusNames[t.status]})
+	}
+	b, err := json.Marshal(rows)
+	if err == nil {
+		err = os.WriteFile(path, b, 0o644)
+	}
+	if err != nil {
+		pf(os.Stderr, "zt: could not write %s: %v\n", path, err)
+	}
 }

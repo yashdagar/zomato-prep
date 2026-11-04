@@ -24,6 +24,8 @@ jobs:
       NO_COLOR: "1"
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -36,10 +38,8 @@ jobs:
       - name: Lint
         run: make lint
 
-      - name: Unit tests, all weeks, with -race
-        run: make test
-
-      - name: Start API
+      - name: Start your API if you have written it
+        if: ${{ hashFiles('backend/cmd/api/*.go') != '' }}
         run: |
           go build -o "$RUNNER_TEMP/api" ./cmd/api
           "$RUNNER_TEMP/api" > "$RUNNER_TEMP/api.log" 2>&1 &
@@ -50,10 +50,31 @@ jobs:
           cat "$RUNNER_TEMP/api.log"
           exit 1
 
-      - name: E2E week 1
-        run: make test W=1
-        env:
-          TEST_API_URL: http://localhost:8080
+      - name: Run every test and record the results
+        run: |
+          if [ -n "$(ls cmd/api/*.go 2>/dev/null)" ]; then export TEST_API_URL=http://localhost:8080; fi
+          ZT_JSON="$RUNNER_TEMP/head.json" make test || true
+
+
+      - name: Run the same tests on the base commit
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "No base commit to compare against."
+            exit 0
+          fi
+          git worktree add "$RUNNER_TEMP/base" "$base"
+          rm -rf "$RUNNER_TEMP/base/backend/tools/zt"
+          cp -R tools/zt "$RUNNER_TEMP/base/backend/tools/zt"
+          (cd "$RUNNER_TEMP/base/backend" && ZT_JSON="$RUNNER_TEMP/base.json" make test || true)
+
+      - name: Fail only if a test that passed before no longer passes
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci: allow-regression') }}
+        run: scripts/ci-progress.sh "$RUNNER_TEMP/head.json" "$RUNNER_TEMP/base.json"
+
+      - name: Show progress without failing
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'ci: allow-regression') }}
+        run: scripts/ci-progress.sh "$RUNNER_TEMP/head.json" || true
 
       - name: API log
         if: always()
