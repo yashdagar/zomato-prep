@@ -1,6 +1,6 @@
-import { nextDelay } from '@app/useSocket';
+import { nextDelay, socketUrl } from '@app/useSocket';
 
-describe('W5 L6 reconnect backoff', () => {
+describe('W5 B6 reconnect backoff', () => {
   test('doubles from one second', () => {
     const noJitter = () => 0.5;
     expect(nextDelay(0, noJitter)).toBe(1000);
@@ -16,5 +16,21 @@ describe('W5 L6 reconnect backoff', () => {
   test('jitter spreads attempts between half and one and a half of the base', () => {
     expect(nextDelay(2, () => 0)).toBe(2000);
     expect(nextDelay(2, () => 0.999)).toBeCloseTo(5996, 0);
+  });
+
+  test('the socket url swaps http for ws and carries the token', () => {
+    expect(socketUrl('http://192.168.1.5:8080', 'abc')).toBe('ws://192.168.1.5:8080/v1/ws?token=abc');
+  });
+
+  test('an https api becomes a wss socket', () => {
+    expect(socketUrl('https://api.example.com', 'abc')).toBe('wss://api.example.com/v1/ws?token=abc');
+  });
+
+  test('a trailing slash on the base url does not double up', () => {
+    expect(socketUrl('http://localhost:8080/', 'abc')).toBe('ws://localhost:8080/v1/ws?token=abc');
+  });
+
+  test('the token is url encoded', () => {
+    expect(socketUrl('http://localhost:8080', 'a b&c=d')).toBe('ws://localhost:8080/v1/ws?token=a%20b%26c%3Dd');
   });
 });
