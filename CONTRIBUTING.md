@@ -26,7 +26,7 @@ Every pull request has exactly one type label that matches the title type, and a
 
 - Type labels: `type: content`, `type: feat`, `type: fix`, `type: ui`, `type: test`, `type: docs`, `type: chore`.
 - Area labels: `area: site` for the Next.js app and `area: learner-repo` for the Go and Expo repository. A change that spans both gets both.
-- Optional status labels: `needs: deploy-budget` for work held until a batched merge, and `blocked` for work that depends on another pull request.
+- Optional status labels: `needs: deploy-budget` for work held until a batched merge, `blocked` for work that depends on another pull request, and `tech-debt` for cleanup of code that works but is untidy, redundant or harder to change than it should be. Use `tech-debt` together with a type label, usually `type: chore` or `type: fix`.
 
 ## Body
 
