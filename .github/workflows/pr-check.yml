@@ -21,7 +21,7 @@ jobs:
           script: |
             const { check } = require('./.github/scripts/check-pr.cjs');
             const pr = context.payload.pull_request;
-            const { data: live } = await github.rest.issues.get({ ...context.repo, issue_number: pr.number });
+            const { data: live } = await github.rest.pulls.get({ ...context.repo, pull_number: pr.number });
             const problems = check({ title: live.title, body: live.body ?? '', labels: live.labels.map(l => l.name) });
             if (problems.length) {
               core.setFailed(problems.join('\n'));
