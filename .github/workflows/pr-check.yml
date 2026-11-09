@@ -1,0 +1,29 @@
+name: pr-check
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  conventions:
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { check } = require('./.github/scripts/check-pr.cjs');
+            const pr = context.payload.pull_request;
+            const { data: live } = await github.rest.pulls.get({ ...context.repo, pull_number: pr.number });
+            const problems = check({ title: live.title, body: live.body ?? '', labels: live.labels.map(l => l.name) });
+            if (problems.length) {
+              core.setFailed(problems.join('\n'));
+              for (const p of problems) core.error(p);
+            }
