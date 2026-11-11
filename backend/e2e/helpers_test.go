@@ -1,5 +1,6 @@
-// Package e2e holds black-box tests that run against a live API. They skip
-// unless TEST_API_URL is set, e.g. TEST_API_URL=http://localhost:8080.
+// Package e2e holds black-box tests that run against a live API. make test
+// starts MySQL schema, seed and API for them; set TEST_API_URL to test an API
+// that is already running instead.
 package e2e_test
 
 import (
@@ -18,6 +19,9 @@ import (
 
 func baseURL(t *testing.T) string {
 	t.Helper()
+	if e := os.Getenv("TEST_API_ERROR"); e != "" {
+		t.Fatalf("the API did not start: %s", e)
+	}
 	u := os.Getenv("TEST_API_URL")
 	if u == "" {
 		t.Skip("set TEST_API_URL=http://localhost:8080 to run")

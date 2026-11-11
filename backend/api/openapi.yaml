@@ -1,0 +1,291 @@
+openapi: 3.1.0
+info:
+  title: Zomato prep API
+  version: "2"
+  description: |
+    The HTTP contract the end-to-end tests grade. Paths, parameters, status
+    codes, JSON field names and error codes are fixed. How you structure the
+    code behind them is yours.
+
+    Every non-2xx response has the Error body. `error` is a stable machine
+    code that clients branch on; `message` is for people and can say anything.
+
+    Runtime settings the test runner passes as environment variables:
+    MYSQL_DSN, REDIS_ADDR, HOURS_REFRESH_INTERVAL (week 2, a Go duration such
+    as 2s, default 1m) and CURSOR_SECRET (week 2 optional, at least 32 bytes).
+    The API listens on :8080.
+
+    Every route is rate limited per X-User-ID header, or per client IP
+    without one (week 1): over the limit the answer is 429 rate_limited with
+    a Retry-After header in seconds. Tests that send many requests, yours
+    included, should back off on 429.
+
+paths:
+  /v1/restaurants:
+    get:
+      summary: Active restaurants near a point, one page at a time
+      description: |
+        Returns active restaurants within radius_km of (lat, lng). Without
+        sort, a restaurant counts as near when it is inside the square of
+        half-side radius_km around the point; with sort=distance (optional
+        W2O3) it must be inside the circle.
+
+        Pages are keyset based: following next_cursor from the first page to
+        the empty cursor visits every matching restaurant exactly once, even
+        when restaurants on pages already read are deactivated or new ones are
+        added meanwhile. A cursor is opaque to clients.
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - name: radius_km
+          in: query
+          schema: { type: number, exclusiveMinimum: 0, maximum: 50, default: 5 }
+        - name: limit
+          in: query
+          description: Integers below 1 count as 1 and above 50 as 50.
+          schema: { type: integer, default: 20 }
+        - name: cursor
+          in: query
+          description: next_cursor from the previous page of the same query.
+          schema: { type: string }
+        - name: at
+          in: query
+          description: W2B7. RFC 3339 time that is_open is evaluated at. Defaults to now.
+          schema: { type: string, format: date-time }
+        - name: q
+          in: query
+          description: |
+            Optional W2O2. Words to search restaurant names for. A restaurant
+            matches when every word matches a whole word in its name or the
+            start of one, ignoring case. Operators such as + - * " are plain
+            text. The geo filter, active filter and paging still apply.
+          schema: { type: string }
+        - name: sort
+          in: query
+          description: Optional W2O3. distance orders by distance from the point, then by id.
+          schema: { type: string, enum: [distance] }
+      responses:
+        "200":
+          description: One page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/RestaurantSummary" }
+                  next_cursor:
+                    type: string
+                    description: Empty on the last page.
+        "400":
+          description: |
+            invalid_parameter (with field set to the parameter's name) for a
+            missing, non-finite, non-numeric or out-of-range lat, lng,
+            radius_km, a non-integer limit, an unparseable at or an unknown
+            sort; invalid_cursor for a cursor this API did not issue.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/restaurants/{id}/menu:
+    get:
+      summary: The full menu of one restaurant
+      description: |
+        Items are ordered by their sort position, then id; sizes by price;
+        groups and options by id. The endpoint runs at most 5 SQL statements
+        however many items, groups and options the menu has.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: The menu. A restaurant without items has items [].
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [restaurant_id, items]
+                properties:
+                  restaurant_id: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/MenuItem" }
+        "400":
+          description: invalid_parameter (field id) when id is not a positive integer.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: restaurant_not_found when no active restaurant has this id.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/menu/price:
+    post:
+      summary: Validate a configured item and price it
+      description: |
+        An existing item with an invalid selection is not a bad request: the
+        response is 200 with every problem listed in errors. A missing item is
+        404, a malformed request is 400.
+
+        Price of one unit: the item's price for the size, plus each chosen
+        option's price for that size (its exact-size price, otherwise its *
+        price), minus the promotion. Promotion: the cheapest chosen option in
+        the Toppings group is free. total_paise is the unit price times qty.
+        When errors is not empty, unit_paise and total_paise are 0.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PriceRequest" }
+      responses:
+        "200":
+          description: A quote
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quote" }
+        "400":
+          description: |
+            invalid_body for a body that is not one JSON object of this shape
+            or has unknown fields; invalid_parameter (with field) for item_id
+            below 1, an empty size, qty outside 1 to 20, or a chosen key that
+            is not a positive integer.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: item_not_found
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "413":
+          description: body_too_large for a body over 64 KiB
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: |
+            invalid_parameter, invalid_cursor, invalid_body, body_too_large,
+            restaurant_not_found, item_not_found, rate_limited (week 1),
+            internal_error.
+        message: { type: string }
+        field:
+          type: string
+          description: The offending parameter, with invalid_parameter.
+
+    RestaurantSummary:
+      type: object
+      required: [id, name, lat, lng, is_open]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        is_open:
+          type: boolean
+          description: |
+            W2B7. Whether one of the restaurant's open_slots contains the
+            request's at time, in Asia/Kolkata local minutes. A slot covers
+            open_min up to but not including close_min; when close_min is not
+            after open_min the slot runs past midnight. Before the hours are
+            first loaded this is false.
+        distance_m:
+          type: integer
+          description: Optional W2O3, only with sort=distance. Great-circle distance in metres.
+
+    MenuItem:
+      type: object
+      required: [id, name, sizes, groups]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        sizes:
+          type: array
+          items:
+            type: object
+            required: [size, price_paise]
+            properties:
+              size: { type: string }
+              price_paise: { type: integer }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [id, name, min_select, max_select, options]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              min_select: { type: integer }
+              max_select: { type: integer }
+              options:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, in_stock, prices]
+                  properties:
+                    id: { type: integer }
+                    name: { type: string }
+                    in_stock: { type: boolean }
+                    prices:
+                      type: object
+                      description: Size to price in paise. Key * means every size.
+                      additionalProperties: { type: integer }
+
+    PriceRequest:
+      type: object
+      additionalProperties: false
+      required: [item_id, size, chosen, qty]
+      properties:
+        item_id: { type: integer }
+        size: { type: string }
+        chosen:
+          type: object
+          description: Option group id, as a string, to the chosen option ids.
+          additionalProperties:
+            type: array
+            items: { type: integer }
+        qty: { type: integer, minimum: 1, maximum: 20 }
+
+    Quote:
+      type: object
+      required: [description, unit_paise, total_paise, errors]
+      properties:
+        description:
+          type: string
+          description: Human readable, starting with the item's name.
+        unit_paise: { type: integer }
+        total_paise: { type: integer }
+        errors:
+          type: array
+          description: Every problem with the selection, one entry each. Never null.
+          items: { $ref: "#/components/schemas/SelectionError" }
+
+    SelectionError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - size_not_offered
+            - unknown_group
+            - selection_count
+            - duplicate_option
+            - unknown_option
+            - option_unavailable
+          description: |
+            size_not_offered: the item has no price for the size.
+            unknown_group: a chosen key is not one of the item's groups.
+            selection_count: a group's number of chosen options is below
+              min_select or above max_select (a group left out counts as 0).
+            duplicate_option: an option is chosen twice in a group; reported
+              once per repeated option.
+            unknown_option: an option id is not in that group.
+            option_unavailable: the option is out of stock, or has neither a
+              price for the size nor a * price. Not reported when the size
+              itself is not offered.
+        group_id:
+          type: integer
+          description: Set for every code except size_not_offered.
+        option_id:
+          type: integer
+          description: Set for duplicate_option, unknown_option and option_unavailable.
+        message: { type: string }
