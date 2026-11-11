@@ -119,12 +119,22 @@ func runTests(s style, filter string, verbose bool) int {
 			ran["unit"] = true
 		}
 	}
+	var st *stack
 	if has["e2e"] {
+		if os.Getenv("TEST_API_URL") == "" {
+			spin("starting MySQL schema, seed and API")
+			st = startStack()
+			defer st.cleanup()
+			st.fail()
+		}
 		spin("end-to-end tests")
-		m, err := runGo(append(withRun("-count=1"), "./e2e/..."), byKey)
+		m, err := runGo(append(withRun("-count=1", "-p", "1"), "./e2e/..."), byKey)
 		if err == nil {
 			merge(m)
 			ran["e2e"] = true
+		}
+		if st != nil {
+			st.stop()
 		}
 	}
 	if len(jest) > 0 {
@@ -138,7 +148,31 @@ func runTests(s style, filter string, verbose bool) int {
 	spin("")
 
 	errs := settle(tests, pkgs, ran)
+	if st != nil {
+		showStack(os.Stdout, s, st)
+	}
 	bad := render(os.Stdout, s, tests, errs, verbose)
+	var races []string
+	if st != nil {
+		races = st.races()
+	}
+	if label != "" && len(races) == 0 {
+		advise(os.Stdout, s, tests, all, week, label)
+	}
+	if st != nil {
+		if r := races; len(r) > 0 {
+			bad = true
+			ln(os.Stdout, "  "+s.red("Data race in the API"))
+			for i, l := range r {
+				if i == 30 && !verbose {
+					ln(os.Stdout, "    "+s.dim("... run with V=1 for the full report"))
+					break
+				}
+				ln(os.Stdout, "    "+l)
+			}
+			ln(os.Stdout)
+		}
+	}
 	fmt.Println("  " + s.dim(fmt.Sprintf("%.1fs", time.Since(start).Seconds())))
 	fmt.Println()
 	if bad {

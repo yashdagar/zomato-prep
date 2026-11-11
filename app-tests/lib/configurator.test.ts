@@ -60,18 +60,19 @@ describe('W4 B5 configurator', () => {
 
   test('server errors are matched to the group they belong to', () => {
     const { byGroup, general } = errorsByGroup(pizza, [
-      'Crust: pick 1..1, got 2',
-      'Cheese burst not available in S',
-      'Toppings: duplicate option 201',
-      'size XL not offered',
+      { code: 'selection_count', group_id: 10, message: 'Choose 1 crust' },
+      { code: 'option_unavailable', group_id: 10, option_id: 102, message: 'Cheese burst is not available in S' },
+      { code: 'duplicate_option', group_id: 20, option_id: 201, message: 'Olives is chosen twice' },
+      { code: 'size_not_offered', message: 'Size XL is not offered' },
+      { code: 'unknown_group', group_id: 99, message: 'Group 99 is not part of this item' },
     ]);
-    expect(byGroup['10']).toEqual(['Crust: pick 1..1, got 2', 'Cheese burst not available in S']);
-    expect(byGroup['20']).toEqual(['Toppings: duplicate option 201']);
-    expect(general).toEqual(['size XL not offered']);
+    expect(byGroup['10']).toEqual(['Choose 1 crust', 'Cheese burst is not available in S']);
+    expect(byGroup['20']).toEqual(['Olives is chosen twice']);
+    expect(general).toEqual(['Size XL is not offered', 'Group 99 is not part of this item']);
   });
 
   test('the quote request matches the price endpoint body', async () => {
-    const calls = fakeFetch(() => json(200, { description: 'Farmhouse (M)', unit_paise: 39900, total_paise: 39900, errors: null }));
+    const calls = fakeFetch(() => json(200, { description: 'Farmhouse (M)', unit_paise: 39900, total_paise: 39900, errors: [] }));
     const quote = await fetchQuote(new ApiClient('http://api', memStore(null)), { itemId: 1, size: 'M', chosen: { '10': [101] }, qty: 1 });
     expect(calls[0].url).toBe('http://api/v1/menu/price');
     expect(calls[0].init.method).toBe('POST');

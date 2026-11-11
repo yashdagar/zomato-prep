@@ -304,11 +304,13 @@ func TestW3B4_RejectedOrderReleasesTheKey(t *testing.T) {
 	bad["size"] = "XXL"
 	r := c.post("/v1/orders", map[string]any{"restaurant_id": rest.ID, "lines": []any{bad}}, "Idempotency-Key", key)
 	var body struct {
-		Error  string   `json:"error"`
-		Errors []string `json:"errors"`
+		Error  string `json:"error"`
+		Errors []struct {
+			Code string `json:"code"`
+		} `json:"errors"`
 	}
 	r.JSON(t, &body)
-	if r.Status != http.StatusBadRequest || len(body.Errors) == 0 {
+	if r.Status != http.StatusBadRequest || len(body.Errors) == 0 || body.Errors[0].Code != "size_not_offered" {
 		t.Fatalf("unknown size: %d %s, want 400 with the pricing errors listed", r.Status, r.Body)
 	}
 	if o := placeOrder(t, c, rest, m, key); o.ID == 0 {
