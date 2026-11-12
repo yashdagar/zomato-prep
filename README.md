@@ -63,7 +63,7 @@ Every week has lessons, exercises, a capacity-planning lesson and an optional ex
 
 - Tests are named after the step they verify, such as `TestW3B4_...`. Here `W3` is the week, `B4` is the build step, and an `O` in place of the `B` means an optional extension.
 - From week 2 on, tests grade what your system does from the outside: HTTP responses, rows in MySQL, the SQL your API sends, and commands such as `go run ./cmd/seed`. They never import your packages, so package layout, type names and file names are yours to choose. The contract they check is `backend/api/openapi.yaml`.
-- For those end-to-end tests `make test` builds a fresh `zomato_e2e` database from your migrations, runs your seed, and starts your API on `:8080` with the race detector. A data race in the API fails the run. MySQL and Redis must be up (`docker compose up -d`).
+- For those end-to-end tests `make test` builds a fresh `zomato_e2e` database from your migrations, runs your seed, empties the order event topics in Redpanda, and starts your API on `:8080` with the race detector. From week 3 some tests also start their own copies of the API (on the address in `HTTP_ADDR`) and of `cmd/worker`, with settings such as `FAIL_EVERY`. A data race in any of them fails the run. MySQL, Redis and Redpanda must be up (`docker compose up -d`).
 - Week 1 and the weeks not yet moved to this model still have unit tests next to the package they test, run with `-race`.
 - Some steps grade tests you write yourself: week 2's capstone runs your `backend/integration` tests against your API and against deliberately broken ones.
 - Optional extensions use build tags such as `w2o1`, which `make test W=2O1` sets for you.
@@ -138,23 +138,14 @@ Pull requests use the template in `.github/PULL_REQUEST_TEMPLATE.md`. Read `CONT
 
 Everything is JSON. Ids are integers. Money is paise.
 
-- `POST /v1/auth/signup` and `/login` with `{email, password}`; signup also accepts
-  `role` (`customer`, `restaurant`, `rider`) and `restaurant_id` so tests can
-  create every role. Both return `{access_token, refresh_token}`.
-  `POST /v1/auth/refresh {refresh_token}` returns a new pair and a reused token is 401.
-  `GET /v1/me` returns `{id, email, role}`; anonymous is 401.
+- Week 3: signup, login, refresh, `GET /v1/me`, placing and listing orders,
+  order events, what the outbox relay publishes to `order-events` and what
+  `cmd/worker` must do are specified in `backend/api/openapi.yaml`, together
+  with the environment variables both binaries read.
 - Week 2: `GET /v1/restaurants`, `GET /v1/restaurants/{id}/menu` and
   `POST /v1/menu/price` are specified in full in `backend/api/openapi.yaml`,
   including the error body `{error, message, field}` every non-2xx response uses
   and the structured selection errors of a price quote.
-- `POST /v1/orders` needs an `Idempotency-Key` header (400 without) and a body
-  `{restaurant_id, lines: [{item_id, size, chosen, qty}]}`; returns the order
-  `{id, status, version, total_paise, restaurant_id}`. The same key returns the same order.
-  `GET /v1/orders?cursor&limit` returns `{items, next_cursor}` for the caller;
-  `GET /v1/orders/{id}` adds `events: [{event_id, from_status, to_status}]` and is 404
-  or 403 for another customer.
-- `POST /v1/orders/{id}/events {event_id, event}` returns the order; wrong role is 403,
-  illegal transition is 409, a repeated `event_id` is 200 and changes nothing.
 - `GET /v1/ws?token=<access>` upgrades to a WebSocket (401 without a token) and sends
   `{order_id, event_id, from, to}` per transition.
 - `POST /v1/rider/online`, `/offline`, `/location {lat, lng}` for riders (403 for others).

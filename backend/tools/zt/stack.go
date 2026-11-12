@@ -27,7 +27,10 @@ const (
 	apiAddr      = "127.0.0.1:8080"
 	refreshEvery = "2s"
 	cursorSecret = "e2e-cursor-secret-0123456789abcdef"
+	jwtSecret    = "e2e-jwt-secret-0123456789abcdef0123456789"
 )
+
+var resetTopics = []string{"order-events", "order-events.retry", "order-events.dlq"}
 
 var migrationFile = regexp.MustCompile(`^(\d+)_.+\.up\.sql$`)
 
@@ -100,6 +103,12 @@ func startStack() *stack {
 		}
 	}
 
+	if err := resetKafka(); err != nil {
+		_ = os.Setenv("TEST_KAFKA_ERROR", err.Error())
+	} else {
+		st.steps = append(st.steps, "Kafka topics reset")
+	}
+
 	n, err := migrate(withParams(rootDSN(), e2eDB), "db/migrations")
 	if err != nil {
 		st.apiErr = err.Error()
@@ -135,6 +144,34 @@ func startStack() *stack {
 		st.apiErr = "go build ./cmd/api failed: " + lastLines(string(out), 6)
 		return st
 	}
+	if exists("cmd/worker") {
+		worker := filepath.Join(dir, "worker")
+		build := exec.Command("go", "build", "-race", "-o", worker, "./cmd/worker")
+		if out, err := build.CombinedOutput(); err != nil {
+			_ = os.Setenv("TEST_WORKER_ERROR", "go build ./cmd/worker failed: "+lastLines(string(out), 6))
+		} else {
+			_ = os.Setenv("TEST_WORKER_BIN", worker)
+		}
+	} else {
+		_ = os.Setenv("TEST_WORKER_ERROR", "cmd/worker is not written yet")
+	}
+	env := []string{
+		"MYSQL_DSN=" + fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", apiUser, apiPassword, mysqlHost(), e2eDB),
+		"REDIS_ADDR=" + envOr("REDIS_ADDR", "127.0.0.1:6379"),
+		"KAFKA_BROKERS=" + kafkaBrokers(),
+		"JWT_SECRET=" + jwtSecret,
+		"HOURS_REFRESH_INTERVAL=" + refreshEvery,
+		"CURSOR_SECRET=" + cursorSecret,
+		"LOGIN_LIMIT_PER_IP=100000",
+		"LOGIN_LIMIT_PER_EMAIL=100000",
+	}
+	envFile := filepath.Join(dir, "api.env")
+	if err := os.WriteFile(envFile, []byte(strings.Join(env, "\n")+"\n"), 0o600); err != nil {
+		st.apiErr = err.Error()
+		return st
+	}
+	_ = os.Setenv("TEST_API_ENV_FILE", envFile)
+	_ = os.Setenv("TEST_API_BIN", bin)
 	st.log = filepath.Join(dir, "api.log")
 	logf, err := os.Create(st.log)
 	if err != nil {
@@ -143,12 +180,7 @@ func startStack() *stack {
 	}
 	st.api = exec.Command(bin)
 	st.api.Stdout, st.api.Stderr = logf, logf
-	st.api.Env = append(os.Environ(),
-		"MYSQL_DSN="+fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", apiUser, apiPassword, mysqlHost(), e2eDB),
-		"REDIS_ADDR="+envOr("REDIS_ADDR", "127.0.0.1:6379"),
-		"HOURS_REFRESH_INTERVAL="+refreshEvery,
-		"CURSOR_SECRET="+cursorSecret,
-	)
+	st.api.Env = append(append(os.Environ(), env...), "HTTP_ADDR="+apiAddr)
 	if err := st.api.Start(); err != nil {
 		st.apiErr = err.Error()
 		return st
@@ -186,6 +218,8 @@ func (st *stack) export() {
 	_ = os.Setenv("TEST_HOURS_REFRESH_INTERVAL", refreshEvery)
 	_ = os.Setenv("TEST_MIGRATIONS_DIR", mustAbs("db/migrations"))
 	_ = os.Setenv("TEST_BACKEND_DIR", mustAbs("."))
+	_ = os.Setenv("TEST_KAFKA_BROKERS", kafkaBrokers())
+	_ = os.Setenv("TEST_JWT_SECRET", jwtSecret)
 }
 
 func (st *stack) fail() {

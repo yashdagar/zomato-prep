@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Zomato prep API
-  version: "2"
+  version: "3"
   description: |
     The HTTP contract the end-to-end tests grade. Paths, parameters, status
     codes, JSON field names and error codes are fixed. How you structure the
@@ -12,8 +12,31 @@ info:
 
     Runtime settings the test runner passes as environment variables:
     MYSQL_DSN, REDIS_ADDR, HOURS_REFRESH_INTERVAL (week 2, a Go duration such
-    as 2s, default 1m) and CURSOR_SECRET (week 2 optional, at least 32 bytes).
-    The API listens on :8080.
+    as 2s, default 1m), CURSOR_SECRET (week 2 optional, at least 32 bytes),
+    JWT_SECRET (week 3, at least 32 bytes; refuse to start without it),
+    KAFKA_BROKERS (week 3, comma separated, default 127.0.0.1:9092),
+    HTTP_ADDR (week 3, the address to listen on, default :8080) and
+    LOGIN_LIMIT_PER_IP and LOGIN_LIMIT_PER_EMAIL (week 3 optional, logins
+    per minute, default 5 each). From week 3 the tests start extra copies of
+    the API and of cmd/worker with their own HTTP_ADDR.
+
+    Week 3 events. Every row added to order_events is published to the Kafka
+    topic order-events within 5 seconds, by a relay inside the API reading the
+    outbox table: record key is the order id in decimal, value is the JSON
+    object {order_id, event_id, from, to} where from is "" for PLACED. Records
+    of one order arrive in the order the events happened, and a row is never
+    published twice.
+
+    Week 3 worker. cmd/worker reads MYSQL_DSN, KAFKA_BROKERS and FAIL_EVERY
+    (when set to N, every Nth notification send fails, for testing). For each
+    event on order-events it stores exactly one notifications row (user_id is
+    the order's customer), however often the event is delivered. A failed send
+    goes to order-events.retry with header attempt set to the next attempt
+    number and is tried again after 2 s times that number; the third failure
+    goes to order-events.dlq with header attempt=3. A record that is not a
+    valid event goes straight to order-events.dlq. Both binaries exit with
+    status 0 within 10 seconds of SIGTERM, and a worker killed at any moment
+    neither loses nor duplicates a notification after a restart.
 
     Every route is rate limited per X-User-ID header, or per client IP
     without one (week 1): over the limit the answer is 429 rate_limited with
@@ -21,6 +44,240 @@ info:
     included, should back off on 429.
 
 paths:
+  /v1/auth/signup:
+    post:
+      summary: Create an account and log it in
+      description: |
+        email is trimmed and lowercased, must be a plain address and at most
+        254 bytes. password is 1 to 72 bytes and is stored as a bcrypt hash in
+        users.password_hash. role defaults to customer; restaurant needs a
+        positive restaurant_id and no other role may send one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                role: { type: string, enum: [customer, restaurant, rider] }
+                restaurant_id: { type: integer }
+      responses:
+        "201": { description: Logged in, content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } } }
+        "400": { description: "invalid_body, or invalid_parameter with field email, password, role or restaurant_id", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: email_taken, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /v1/auth/login:
+    post:
+      summary: Exchange email and password for a token pair
+      description: |
+        A wrong password and an unknown email get the same answer. Each login
+        starts its own refresh token family. With the optional login limit
+        (W3O3), a client IP or an email over its per-minute limit gets 429
+        rate_limited with Retry-After before the password is checked; the
+        X-User-ID header never changes which bucket a login counts against.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: Logged in, content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } } }
+        "400": { description: invalid_body, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: invalid_credentials, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: rate_limited (W3O3), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /v1/auth/refresh:
+    post:
+      summary: Rotate a refresh token
+      description: |
+        Returns a new pair; the token sent can never be used again. With
+        reuse detection (W3O1), presenting a token that was already rotated
+        also revokes the newest token of the same login, while other logins
+        of the same user keep working.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { description: Rotated, content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } } }
+        "400": { description: invalid_body, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: invalid_refresh_token for an unknown, used, revoked or expired token, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /v1/me:
+    get:
+      summary: The caller's account
+      description: |
+        Routes under /v1/me and /v1/orders need Authorization: Bearer
+        <access_token>. A missing header, another scheme, or a token that is
+        malformed, expired, signed with another secret or with any algorithm
+        but HS256 gets 401 unauthorized, and the route's handler never runs.
+        /healthz, /v1/auth/* and the week 2 routes need no token.
+      responses:
+        "200":
+          description: The account
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, email, role, restaurant_id]
+                properties:
+                  id: { type: integer }
+                  email: { type: string }
+                  role: { type: string }
+                  restaurant_id: { type: [integer, "null"] }
+        "401": { description: unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /v1/orders:
+    post:
+      summary: Place an order, at most once per Idempotency-Key
+      description: |
+        Customers only. Each line is priced on the server exactly as
+        POST /v1/menu/price would price it with qty; a total sent by the client
+        is ignored. Placing writes the order (status PLACED, version 1), its
+        lines, a PLACED order event and an outbox row in one transaction.
+
+        The same customer repeating an Idempotency-Key gets the order that key
+        created, with 200; while the first request with a key is still running,
+        another with the same key gets 409 request_in_progress. Keys are scoped
+        per customer. A request rejected with 400 does not use up its key.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 36 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [restaurant_id, lines]
+              properties:
+                restaurant_id: { type: integer }
+                lines:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [item_id, size, chosen, qty]
+                    properties:
+                      item_id: { type: integer }
+                      size: { type: string }
+                      chosen: { type: object, additionalProperties: { type: array, items: { type: integer } } }
+                      qty: { type: integer, minimum: 1, maximum: 50 }
+      responses:
+        "201": { description: Placed, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "200": { description: The order this key already created, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "400":
+          description: |
+            invalid_body; invalid_parameter with field Idempotency-Key,
+            restaurant_id or lines (no lines, or a qty outside 1 to 50);
+            invalid_order with errors listing every problem of every line.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Error"
+                  - type: object
+                    properties:
+                      errors:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/SelectionError"
+                            - type: object
+                              required: [line]
+                              properties:
+                                line: { type: integer, description: Index of the line in the request, from 0. }
+                                code:
+                                  description: The SelectionError codes, plus unknown_item for an item that is not on this restaurant's menu.
+        "401": { description: unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: forbidden for restaurant and rider accounts, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: request_in_progress, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      summary: The caller's own orders, newest first
+      description: Keyset pages; following next_cursor visits each order once.
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 20 }, description: Clamped to 1 to 50. }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: One page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Order" } }
+                  next_cursor: { type: string }
+        "400": { description: invalid_parameter (field limit) or invalid_cursor, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /v1/orders/{id}:
+    get:
+      summary: One order with its events, oldest event first
+      description: |
+        A customer sees their own orders, a restaurant account its
+        restaurant's orders, a rider any order. Anything else is 404, so the
+        answer never reveals that an order exists.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The order, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "400": { description: invalid_parameter (field id), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: order_not_found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /v1/orders/{id}/events:
+    post:
+      summary: Move an order through its lifecycle
+      description: |
+        Transitions, with the only role allowed to make each:
+        PLACED ACCEPT ACCEPTED (restaurant), PLACED REJECT REJECTED
+        (restaurant), PLACED CANCEL CANCELLED (customer), ACCEPTED START_PREP
+        PREPARING (restaurant), ACCEPTED CANCEL CANCELLED (customer),
+        PREPARING MARK_READY READY (restaurant), READY PICK_UP PICKED_UP
+        (rider), PICKED_UP DELIVER DELIVERED (rider). DELIVERED, CANCELLED and
+        REJECTED are final.
+
+        Each applied event raises version by one and adds an order event and
+        an outbox row in the same transaction. Of two requests racing on one
+        version, exactly one wins. Repeating an event_id on the same order
+        returns the order unchanged with 200.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, event]
+              properties:
+                event_id: { type: string, minLength: 1, maxLength: 36 }
+                event: { type: string, enum: [ACCEPT, REJECT, START_PREP, MARK_READY, PICK_UP, DELIVER, CANCEL] }
+      responses:
+        "200": { description: The order after the event, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "400": { description: invalid_body, or invalid_parameter with field event_id or event, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: forbidden when the caller's role may not make this event, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: order_not_found, as for GET, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: "illegal_transition from the current status, concurrent_update when another event won the race, event_id_conflict when the event_id was used on another order", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /v1/restaurants:
     get:
       summary: Active restaurants near a point, one page at a time
@@ -165,7 +422,10 @@ components:
           description: |
             invalid_parameter, invalid_cursor, invalid_body, body_too_large,
             restaurant_not_found, item_not_found, rate_limited (week 1),
-            internal_error.
+            internal_error; week 3: email_taken, invalid_credentials,
+            invalid_refresh_token, unauthorized, forbidden, order_not_found,
+            invalid_order, request_in_progress, illegal_transition,
+            concurrent_update, event_id_conflict.
         message: { type: string }
         field:
           type: string
@@ -289,3 +549,38 @@ components:
           type: integer
           description: Set for duplicate_option, unknown_option and option_unavailable.
         message: { type: string }
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: A JWT signed with HS256 and JWT_SECRET, carrying exp. Its other claims are yours to choose.
+        refresh_token:
+          type: string
+          description: 32 random bytes as 64 lowercase hex characters.
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, enum: [900] }
+
+    Order:
+      type: object
+      required: [id, restaurant_id, status, version, total_paise, created_at]
+      properties:
+        id: { type: integer }
+        restaurant_id: { type: integer }
+        status: { type: string, enum: [PLACED, ACCEPTED, PREPARING, READY, PICKED_UP, DELIVERED, CANCELLED, REJECTED] }
+        version: { type: integer }
+        total_paise: { type: integer }
+        created_at: { type: string, format: date-time }
+        events:
+          type: array
+          description: Only on GET /v1/orders/{id}.
+          items:
+            type: object
+            required: [event_id, from_status, to_status, actor]
+            properties:
+              event_id: { type: string }
+              from_status: { type: string }
+              to_status: { type: string }
+              actor: { type: string, enum: [customer, restaurant, rider] }
