@@ -45,7 +45,9 @@ func TestW3O2_ARelayThatCannotReachKafkaLeavesRowsForTheOthers(t *testing.T) {
 	if len(got) != 50 {
 		t.Fatalf("with one relay unable to reach Kafka, %s got %d of 50 records; a failed publish must leave its rows unsent and unlocked", topic, len(got))
 	}
-	unsent := func() int { return count(t, db, "SELECT COUNT(*) FROM outbox WHERE topic = ? AND sent_at IS NULL", topic) }
+	unsent := func() int {
+		return count(t, db, "SELECT COUNT(*) FROM outbox WHERE topic = ? AND sent_at IS NULL", topic)
+	}
 	if !eventually(t, 10*time.Second, 200*time.Millisecond, func() bool { return unsent() == 0 }) {
 		t.Fatalf("%d rows still unsent 10s after all 50 records arrived", unsent())
 	}

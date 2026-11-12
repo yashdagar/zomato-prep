@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -37,11 +38,10 @@ func (c cast) actor(role string) *client {
 	return c.rider
 }
 
-var eventSeq int
+var eventSeq atomic.Int64
 
 func eventKey() string {
-	eventSeq++
-	return fmt.Sprintf("e%d-%d", time.Now().UnixNano()%1e12, eventSeq)
+	return fmt.Sprintf("e%d-%d", time.Now().UnixNano()%1e12, eventSeq.Add(1))
 }
 
 func send(t *testing.T, c *client, orderID int64, event string) resp {
