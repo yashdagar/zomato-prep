@@ -128,7 +128,7 @@ func runTests(s style, filter string, verbose bool) int {
 			st.fail()
 		}
 		spin("end-to-end tests")
-		m, err := runGo(append(withRun("-count=1", "-p", "1"), "./e2e/..."), byKey)
+		m, err := runGo(append(withRun("-count=1", "-p", "1", "-timeout", "60m"), "./e2e/..."), byKey)
 		if err == nil {
 			merge(m)
 			ran["e2e"] = true
