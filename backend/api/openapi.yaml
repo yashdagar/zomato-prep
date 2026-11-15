@@ -114,7 +114,7 @@ paths:
       responses:
         "200": { description: Rotated, content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } } }
         "400": { description: invalid_body, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
-        "401": { description: invalid_refresh_token for an unknown, used, revoked or expired token, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: "invalid_refresh_token for an unknown, used, revoked or expired token", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /v1/me:
     get:
@@ -201,7 +201,7 @@ paths:
                             - type: object
                               required: [line]
                               properties:
-                                line: { type: integer, description: Index of the line in the request, from 0. }
+                                line: { type: integer, description: "Index of the line in the request, from 0." }
                                 code:
                                   description: The SelectionError codes, plus unknown_item for an item that is not on this restaurant's menu.
         "401": { description: unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
@@ -272,10 +272,10 @@ paths:
                 event: { type: string, enum: [ACCEPT, REJECT, START_PREP, MARK_READY, PICK_UP, DELIVER, CANCEL] }
       responses:
         "200": { description: The order after the event, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
-        "400": { description: invalid_body, or invalid_parameter with field event_id or event, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "400": { description: "invalid_body, or invalid_parameter with field event_id or event", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { description: unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "403": { description: forbidden when the caller's role may not make this event, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
-        "404": { description: order_not_found, as for GET, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: "order_not_found, as for GET", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "409": { description: "illegal_transition from the current status, concurrent_update when another event won the race, event_id_conflict when the event_id was used on another order", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /v1/restaurants:
