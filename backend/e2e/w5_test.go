@@ -79,7 +79,7 @@ func TestW5B3_RiderLocationAndOffline(t *testing.T) {
 	}
 }
 
-func TestW5D3_TwoRidersOneClaim(t *testing.T) {
+func TestW5B4_TwoRidersOneClaim(t *testing.T) {
 	cust, _ := signup(t, "customer", 0)
 	rest, m := firstRestaurant(t, cust)
 	restUser, _ := signup(t, "restaurant", rest.ID)
