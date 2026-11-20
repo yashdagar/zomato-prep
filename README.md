@@ -79,7 +79,7 @@ make test W=W1B2 V=1                       # one step, full failure output
 make test W=2O1                            # one optional extension
 make run                                   # logo banner, then go run ./cmd/api
 make worker                                # logo banner, then go run ./cmd/worker
-make lint                                  # golangci-lint over the packages you have written
+make lint                                  # golangci-lint over the code you have written, not the test files
 ```
 
 `make test` runs the unit tests with `-race`, the e2e tests against a stack it starts, and the app tests. Set `NO_COLOR=1` for plain output. Stop your own API first, since the test API needs `:8080`, or set `TEST_API_URL=http://localhost:8080` to test the API you are running instead.
@@ -126,7 +126,7 @@ cd ../app-tests && npm install && npx jest             # the Expo app libraries
 - **A test says `undefined`.** The package or function it expects does not exist yet. Read the test, then write it.
 - **A step shows `skipped`.** It needs a service. Run `docker compose up -d` and set `TEST_REDIS_ADDR` as listed at the end of `make test`.
 - **The `stack` line is red.** `make test` could not prepare the database or start your API. The line says which: a migration that failed, `go run ./cmd/seed` failing, the API not building, or something else on `:8080`.
-- **`make lint` fails on a clean clone.** It only lints packages that contain non-test Go files, so write the package first.
+- **`make lint` fails on a clean clone.** It only lints packages that contain non-test Go files, so write the package first. It skips test files, because a test can import a package from a later week that you have not written yet.
 - **Redis or MySQL tests are flaky on a busy laptop.** Close other heavy processes and rerun the step with `V=1` to see the full output.
 - **Port already in use.** Another MySQL, Redis or Kafka is running. Stop it or change the port in `docker-compose.yml`.
 
